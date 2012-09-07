@@ -20,8 +20,11 @@ function parseQuery (text) {
       case '>':
         res.push(['child']);
         break;
-      case '~':
+      case '+':
         res.push(['sibling']);
+        break;
+      case '~':
+        res.push(['adjacent']);
         break;
       case '':
         break;
@@ -61,55 +64,57 @@ function CssQuery (text, ss) {
     return false;
   }
 
-  function isChildMatch (tag, attributes, i, d, vd) {
-    return steps[i] && steps[i][0] == 'child' && d == vd - 1 && isSimpleMatch(tag, attributes, i + 1); 
+  function isChildMatch (tag, attributes, i, depth, vd) {
+    return steps[i] && steps[i][0] == 'child' && depth == vd - 1 && isSimpleMatch(tag, attributes, i + 1); 
   }
 
-  function isSiblingMatch (tag, attributes, i, d, vd) {
-    return steps[i - 1] && steps[i - 1][0] == 'sibling' && d == vd && isSimpleMatch(tag, attributes, i); 
+  function isAdjacentMatch (tag, attributes, i, depth, vd) {
+    return steps[i] && steps[i][0] == 'adjacent' && depth == vd && isSimpleMatch(tag, attributes, i + 1); 
   }
 
-  var d = 0;
+  function isSiblingMatch (tag, attributes, i, depth, vd, j, sib) {
+    return steps[i] && steps[i][0] == 'sibling' && depth == vd && j == sib + 1 && isSimpleMatch(tag, attributes, i + 1); 
+  }
+
+  var depth = 0, sibling = [0];
 
   function pushDepth (tag, attributes) {
     state.forEach(function (q) {
       if (isSimpleMatch(tag, attributes, q.length)) {
-        //console.log('Continuing steps with:', node.name);
-        q.push(d);
-      } else if (isChildMatch(tag, attributes, q.length, last(q), d)) {
-        // console.log('Matching child on:', node.name);
-        q.push(d);
-        q.push(d);
-      } else if (isSiblingMatch(tag, attributes, q.length, last(q), d)) {
-        // console.log('Matching child on:', node.name);
-        q.push(d);
+        q.push([depth, last(sibling)]);
+      } else if (isChildMatch(tag, attributes, q.length, last(q)[0], depth)) {
+        q.push([depth, last(sibling)]);
+        q.push([depth, last(sibling)]);
+      } else if (isAdjacentMatch(tag, attributes, q.length, last(q)[0], depth)) {
+        q.push([depth, last(sibling)]);
+        q.push([depth, last(sibling)]);
+      } else if (isSiblingMatch(tag, attributes, q.length, last(q)[0], depth, last(sibling), last(q)[1])) {
+        q.push([depth, last(sibling)]);
+        q.push([depth, last(sibling)]);
       }
     });
     if (isSimpleMatch(tag, attributes, 0)) {
       //console.log('Starting steps with:', node.name);
-      state.push([d]);
+      state.push([[depth, last(sibling)]]);
     }
-    state.forEach(function (q) {
-      var i = q.length;
-      if (steps[i] && steps[i][0] == 'sibling') {
-        q.push(d - 1);
-      }
-    });
     if (state.some(function (q) {
-      return q.length == steps.length && last(q) == d;
+      return q.length == steps.length && last(q)[0] == depth;
     })) {
       query.emit('match', tag, attributes);
     }
-    d++;
+    depth++;
 
     // Emit 'opentag' event.
     query.emit('opentag', tag, attributes);
   }
 
   function popDepth (tag) {
-    d--;
+    depth--;
     state.forEach(function (q) {
-      while (q.length && q[q.length - 1] >= d) {
+      while (q.length && q[q.length - 1][0] >= depth) {
+        if (steps[q.length] && q[q.length - 1][0] == depth && ['sibling', 'adjacent'].indexOf(steps[q.length][0]) != -1) {
+          break;
+        }
         q.pop();
       }
     })
@@ -126,8 +131,11 @@ function CssQuery (text, ss) {
   ss.on('opentag', function (node) {
     var tag = node.name.toLowerCase();
     pushDepth(tag, node.attributes);
+    sibling.push(0);
 
     if (CLOSING.indexOf(tag) != -1) {
+      sibling.pop();
+      sibling[sibling.length - 1]++;
       popDepth(tag);
     }
   });
@@ -137,29 +145,32 @@ function CssQuery (text, ss) {
     if (CLOSING.indexOf(tag) != -1) {
       return;
     }
-
+    sibling.pop();
+    sibling[sibling.length - 1]++;
     popDepth(tag);
   });
 
+  // Forward useful events.
+
   ss.on('end', function () {
-    // Emit 'end' event.
     query.emit('end');
   });
 
   ss.on('text', function (text) {
-    // Emit 'text' event.
     query.emit('text', text);
   });
 }
 
+// Call a function after the following element.
+
 CssQuery.prototype.skip = function (next) {
-  var d = 0;
+  var depth = 0;
   function into () {
-    d++;
+    depth++;
   }
   function outof () {
-    d--;
-    if (d == 0) {
+    depth--;
+    if (depth == 0) {
       this.removeListener('opentag', into);
       this.removeListener('closetag', outof);
       next.call(this);
@@ -168,6 +179,8 @@ CssQuery.prototype.skip = function (next) {
   this.addListener('opentag', into);
   this.addListener('closetag', outof);
 };
+
+// Read text for the next element.
 
 CssQuery.prototype.readText = function (next) {
   var str = [];
@@ -180,6 +193,8 @@ CssQuery.prototype.readText = function (next) {
     next.call(this, str.join(''));
   });
 };
+
+// Read HTML for the next element.
 
 CssQuery.prototype.readHTML = function (next) {
   var str = [];
