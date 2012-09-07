@@ -1,8 +1,18 @@
+// http://coding.smashingmagazine.com/2009/08/17/taming-advanced-css-selectors/
+
 var util = require('util');
 var EventEmitter = require('events').EventEmitter;
 
 var sax = require('sax');
 var ent = require('ent');
+
+String.prototype.startsWith = function (str) {
+    return this.slice(0, str.length) == str;
+};
+
+String.prototype.endsWith = function (str) {
+    return this.slice(-str.length) == str;
+};
 
 function last (arr, i) {
   return arr[arr.length - 1 - (i || 0)];
@@ -15,7 +25,9 @@ var CLOSING = [
 
 function parseQuery (text) {
   var res = [];
-  text.trim().split(/\s+/).forEach(function (token) {
+  text.trim().split(/\s+/).filter(function (token) {
+    return token;
+  }).forEach(function (token) {
     switch (token) {
       case '>':
         res.push(['child']);
@@ -26,11 +38,9 @@ function parseQuery (text) {
       case '~':
         res.push(['adjacent']);
         break;
-      case '':
-        break;
       default:
         // Simple selector
-        res.push(['simple', token.split(/(?=[.:#]+)/)]);
+        res.push(['simple', token.split(/(?=[.:#\[]+)/)]);
     }
   })
   return res;
@@ -56,8 +66,33 @@ function CssQuery (text, ss) {
             return attributes.id && attributes.id.trim() == part.substr(1);
           case '.':
             return attributes.class && attributes.class.trim().split(/\s+/).indexOf(part.substr(1)) != -1;
+          case '[':
+            var parts = part.substr(1, part.length - 2).match(/^([a-z\-_0-9A-Z]+)([=~*|^$]+)?(.*)?$/);
+            if (!Object.prototype.hasOwnProperty.call(attributes, parts[1])) {
+              return false;
+            }
+            if (parts[2]) {
+              var against = parts[3].replace(/^['"]|['"]$/g, '');
+              switch (parts[2]) {
+                case '=':
+                  return against == attributes[parts[1]];
+                case '^=':
+                  return attributes[parts[1]].startsWith(against);
+                case '$=':
+                  return attributes[parts[1]].endsWith(against);
+                case '*=':
+                  return attributes[parts[1]].indexOf(against) != -1;
+                case '|=':
+                  return against == attributes[parts[1]] || attributes[parts[1]].startsWith(against + '-');
+                case '~=':
+                  return attributes[parts[1]].trim().split(/\s+/).indexOf(against) != -1;
+                default:
+                  return false;
+              }
+            }
+            return true;
           default:
-            return part == tag;
+            return part == tag || part == '*';
         }
       })
     }
