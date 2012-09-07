@@ -57,6 +57,8 @@ function CssQuery (text, ss) {
 
   // Forward useful events.
 
+  ss.setMaxListeners(100);
+
   ss.on('end', function () {
     query.emit('end');
   });
