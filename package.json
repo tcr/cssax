@@ -1,0 +1,22 @@
+{
+  "name": "cssax",
+  "version": "0.0.1",
+  "description": "CSS querying of HTML streams.",
+  "main": "cssax.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tcr/cssax.git"
+  },
+  "keywords": [
+    "css",
+    "sax"
+  ],
+  "author": "Tim Cameron Ryan",
+  "license": "MIT",
+  "dependencies": {
+    "ent": "0.0.4"
+  }
+}

@@ -1,96 +1,134 @@
-var fs = require('fs');
 var util = require('util');
-var sax = require('sax');
 var EventEmitter = require('events').EventEmitter;
 
-  function last (arr, i) {
-    return arr[arr.length - 1 - (i || 0)];
-  }
+var sax = require('sax');
+var ent = require('ent');
 
-var query = [
-  ['tag', 'head'],
-  ['child', null],
-  ['tag', 'title']
-]
+function last (arr, i) {
+  return arr[arr.length - 1 - (i || 0)];
+}
 
+var CLOSING = [
+  "area", "base", "basefont", "br", "col", "frame", "hr",
+  "img", "input", "link", "meta", "param"
+];
 
-var CLOSING = ["area", "base", "basefont", "br", "col", "frame", "hr", "img", "input", "link", "meta", "param"];
+function parseQuery (text) {
+  var res = [];
+  text.trim().split(/\s+/).forEach(function (token) {
+    switch (token) {
+      case '>':
+        res.push(['child']);
+        break;
+      case '~':
+        res.push(['sibling']);
+        break;
+      case '':
+        break;
+      default:
+        // Simple selector
+        res.push(['simple', token.split(/(?=[.:#]+)/)]);
+    }
+  })
+  return res;
+}
 
-/*
-cssStream
-  'opentag', tag, attributes
-  'closetag', tag
-  'data'
-  'end'
-*/
+/**
+ * CssQuery class
+ */
 
-util.inherits(CssStream, EventEmitter);
+util.inherits(CssQuery, EventEmitter);
 
-function CssStream (query, stream) {
-  this.query = query;
+function CssQuery (text, ss) {
+  var query = this;
 
+  var steps = parseQuery(text);
   var state = [];
 
-  function isTagMatch (tag, i) {
-    return query[i] && query[i][0] == 'tag' && query[i][1] == tag.toLowerCase();
+  function isSimpleMatch (tag, attributes, i) {
+    if (steps[i] && steps[i][0] == 'simple') {
+      return steps[i][1].every(function (part) {
+        switch (part[0]) {
+          case '#':
+            return attributes.id && attributes.id.trim() == part.substr(1);
+          case '.':
+            return attributes.class && attributes.class.trim().split(/\s+/).indexOf(part.substr(1)) != -1;
+          default:
+            return part == tag;
+        }
+      })
+    }
+    return false;
   }
 
-  function isChildMatch (tag, i, d, vd) {
-    return query[i] && query[i][0] == 'child' && d == vd - 1 && isTagMatch(tag, i + 1); 
+  function isChildMatch (tag, attributes, i, d, vd) {
+    return steps[i] && steps[i][0] == 'child' && d == vd - 1 && isSimpleMatch(tag, attributes, i + 1); 
   }
 
-  var csss = this;
-  function checkQueries (tag, attributes) {
-    state.forEach(function (q) {
-      if (q.length == query.length) {
-        csss.emit('match', tag, attributes);
-      }
-    });
-    state = state.filter(function (q) {
-      return q.length > 0;
-    });
+  function isSiblingMatch (tag, attributes, i, d, vd) {
+    return steps[i - 1] && steps[i - 1][0] == 'sibling' && d == vd && isSimpleMatch(tag, attributes, i); 
   }
 
   var d = 0;
 
-  // parsing
-
-  var ss = require("sax").createStream(false);
-
-  ss.on('error', function (e) {
-    console.error(e);
-  });
-
-  ss.on('opentag', function (node) {
-    var tag = node.name.toLowerCase();
-    if (isTagMatch(node.name, 0)) {
-      //console.log('Starting query with:', node.name);
-      state.push([d]);
-    }
+  function pushDepth (tag, attributes) {
     state.forEach(function (q) {
-      if (isTagMatch(tag, q.length)) {
-        //console.log('Continuing query with:', node.name);
+      if (isSimpleMatch(tag, attributes, q.length)) {
+        //console.log('Continuing steps with:', node.name);
         q.push(d);
-      } else if (isChildMatch(node.name, q.length, last(q), d)) {
+      } else if (isChildMatch(tag, attributes, q.length, last(q), d)) {
         // console.log('Matching child on:', node.name);
         q.push(d);
         q.push(d);
+      } else if (isSiblingMatch(tag, attributes, q.length, last(q), d)) {
+        // console.log('Matching child on:', node.name);
+        q.push(d);
       }
     });
-    checkQueries(tag, node.attributes);
+    if (isSimpleMatch(tag, attributes, 0)) {
+      //console.log('Starting steps with:', node.name);
+      state.push([d]);
+    }
+    state.forEach(function (q) {
+      var i = q.length;
+      if (steps[i] && steps[i][0] == 'sibling') {
+        q.push(d - 1);
+      }
+    });
+    if (state.some(function (q) {
+      return q.length == steps.length && last(q) == d;
+    })) {
+      query.emit('match', tag, attributes);
+    }
     d++;
-    cssStream.emit('opentag', tag, node.attributes);
-      //console.log(tag, state)
+
+    // Emit 'opentag' event.
+    query.emit('opentag', tag, attributes);
+  }
+
+  function popDepth (tag) {
+    d--;
+    state.forEach(function (q) {
+      while (q.length && q[q.length - 1] >= d) {
+        q.pop();
+      }
+    })
+    state = state.filter(function (q) {
+      return q.length > 0;
+    });
+
+    // Emit 'closetag' event.
+    query.emit('closetag', tag);
+  }
+
+  // parsing
+
+  ss.on('opentag', function (node) {
+    var tag = node.name.toLowerCase();
+    pushDepth(tag, node.attributes);
+
     if (CLOSING.indexOf(tag) != -1) {
-          d--;
-      state.forEach(function (q) {
-        while (q.length && q[q.length - 1] == d) {
-          //console.log('poppin');
-          q.pop();
-        }
-      })
-      checkQueries();
-      cssStream.emit('closetag', tag);
+      popDepth(tag);
     }
   });
 
@@ -99,30 +137,23 @@ function CssStream (query, stream) {
     if (CLOSING.indexOf(tag) != -1) {
       return;
     }
-    //console.log(tag);
-    state.forEach(function (q) {
-      while (q.length && q[q.length - 1] == d) {
-        q.pop();
-      }
-    })
-    checkQueries();
-    cssStream.emit('closetag', tag);
-    d--;
+
+    popDepth(tag);
   });
 
   ss.on('end', function () {
-    cssStream.emit('end');
+    // Emit 'end' event.
+    query.emit('end');
   });
 
   ss.on('text', function (text) {
-    cssStream.emit('text', text);
+    // Emit 'text' event.
+    query.emit('text', text);
   });
-
-  stream.pipe(ss);
 }
 
-CssStream.prototype.skip = function (next) {
-  var d = 1;
+CssQuery.prototype.skip = function (next) {
+  var d = 0;
   function into () {
     d++;
   }
@@ -136,9 +167,9 @@ CssStream.prototype.skip = function (next) {
   }
   this.addListener('opentag', into);
   this.addListener('closetag', outof);
-}
+};
 
-CssStream.prototype.readText = function (next) {
+CssQuery.prototype.readText = function (next) {
   var str = [];
   function data (text) {
     str.push(text)
@@ -150,10 +181,42 @@ CssStream.prototype.readText = function (next) {
   });
 };
 
-var cssStream = new CssStream(query, fs.createReadStream('index.html'));
-cssStream.on('match', function (tag) {
-  console.log('matched', tag);
-  this.readText(function (text) {
-    console.log(JSON.stringify(text));
+CssQuery.prototype.readHTML = function (next) {
+  var str = [];
+  function data (text) {
+    str.push(text)
+  }
+  function opentag (tag, attributes) {
+    str.push('<' + tag + Object.keys(attributes).map(function (key) {
+      return ' ' + key + '=' + '"' + ent.encode(attributes[key]) + '"';
+    }).join('') + '>');
+  }
+  function closetag (tag) {
+    if (CLOSING.indexOf(tag) == -1) {
+      str.push('</' + tag + '>');
+    }
+  }
+  this.addListener('text', data);
+  this.addListener('opentag', opentag);
+  this.addListener('closetag', closetag);
+  this.skip(function () {
+    this.removeListener('text', data);
+    this.removeListener('opentag', opentag);
+    this.removeListener('closetag', closetag);
+    next.call(this, str.join(''));
   });
-});
+};
+
+/**
+ * Module API
+ */
+
+exports.createStream = function () {
+  var stream = sax.createStream(false, {
+    lowercase: true
+  });
+  stream.query = function (text) {
+    return new CssQuery(text, this);
+  };
+  return stream;
+};

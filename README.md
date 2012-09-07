@@ -1,12 +1,16 @@
-# CSS Sax Parsing
+# CSS Querying Sax Parser
 
 For HTML/XML.
 
 ```
-var csss = new CSSStream('title', fs.createReadStream('index.html'));
-csss.on('match', function (tag, attributes) {
-  csss.readText(function (title) {
-    console.log(title);
+var cssax = require('../cssax');
+
+var stream = cssax.createStream();
+stream.query('title').on('match', function (tag, attributes) {
+  this.readText(function (text) {
+    console.log(JSON.stringify(text));
   });
 });
+
+require('fs').createReadStream('file.html').pipe(stream);
 ```
