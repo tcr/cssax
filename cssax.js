@@ -55,136 +55,6 @@ util.inherits(CssQuery, EventEmitter);
 function CssQuery (text, ss) {
   var query = this;
 
-  var steps = parseQuery(text);
-  var state = [];
-
-  function isSimpleMatch (tag, attributes, i) {
-    if (steps[i] && steps[i][0] == 'simple') {
-      return steps[i][1].every(function (part) {
-        switch (part[0]) {
-          case '#':
-            return attributes.id && attributes.id.trim() == part.substr(1);
-          case '.':
-            return attributes.class && attributes.class.trim().split(/\s+/).indexOf(part.substr(1)) != -1;
-          case '[':
-            var parts = part.substr(1, part.length - 2).match(/^([a-z\-_0-9A-Z]+)([=~*|^$]+)?(.*)?$/);
-            if (!Object.prototype.hasOwnProperty.call(attributes, parts[1])) {
-              return false;
-            }
-            if (parts[2]) {
-              var against = parts[3].replace(/^['"]|['"]$/g, '');
-              switch (parts[2]) {
-                case '=':
-                  return against == attributes[parts[1]];
-                case '^=':
-                  return attributes[parts[1]].startsWith(against);
-                case '$=':
-                  return attributes[parts[1]].endsWith(against);
-                case '*=':
-                  return attributes[parts[1]].indexOf(against) != -1;
-                case '|=':
-                  return against == attributes[parts[1]] || attributes[parts[1]].startsWith(against + '-');
-                case '~=':
-                  return attributes[parts[1]].trim().split(/\s+/).indexOf(against) != -1;
-                default:
-                  return false;
-              }
-            }
-            return true;
-          default:
-            return part == tag || part == '*';
-        }
-      })
-    }
-    return false;
-  }
-
-  function isChildMatch (tag, attributes, i, depth, vd) {
-    return steps[i] && steps[i][0] == 'child' && depth == vd - 1 && isSimpleMatch(tag, attributes, i + 1); 
-  }
-
-  function isAdjacentMatch (tag, attributes, i, depth, vd) {
-    return steps[i] && steps[i][0] == 'adjacent' && depth == vd && isSimpleMatch(tag, attributes, i + 1); 
-  }
-
-  function isSiblingMatch (tag, attributes, i, depth, vd, j, sib) {
-    return steps[i] && steps[i][0] == 'sibling' && depth == vd && j == sib + 1 && isSimpleMatch(tag, attributes, i + 1); 
-  }
-
-  var depth = 0, sibling = [0];
-
-  function pushDepth (tag, attributes) {
-    state.forEach(function (q) {
-      if (isSimpleMatch(tag, attributes, q.length)) {
-        q.push([depth, last(sibling)]);
-      } else if (isChildMatch(tag, attributes, q.length, last(q)[0], depth)) {
-        q.push([depth, last(sibling)]);
-        q.push([depth, last(sibling)]);
-      } else if (isAdjacentMatch(tag, attributes, q.length, last(q)[0], depth)) {
-        q.push([depth, last(sibling)]);
-        q.push([depth, last(sibling)]);
-      } else if (isSiblingMatch(tag, attributes, q.length, last(q)[0], depth, last(sibling), last(q)[1])) {
-        q.push([depth, last(sibling)]);
-        q.push([depth, last(sibling)]);
-      }
-    });
-    if (isSimpleMatch(tag, attributes, 0)) {
-      //console.log('Starting steps with:', node.name);
-      state.push([[depth, last(sibling)]]);
-    }
-    if (state.some(function (q) {
-      return q.length == steps.length && last(q)[0] == depth;
-    })) {
-      query.emit('match', tag, attributes);
-    }
-    depth++;
-
-    // Emit 'opentag' event.
-    query.emit('opentag', tag, attributes);
-  }
-
-  function popDepth (tag) {
-    depth--;
-    state.forEach(function (q) {
-      while (q.length && q[q.length - 1][0] >= depth) {
-        if (steps[q.length] && q[q.length - 1][0] == depth && ['sibling', 'adjacent'].indexOf(steps[q.length][0]) != -1) {
-          break;
-        }
-        q.pop();
-      }
-    })
-    state = state.filter(function (q) {
-      return q.length > 0;
-    });
-
-    // Emit 'closetag' event.
-    query.emit('closetag', tag);
-  }
-
-  // parsing
-
-  ss.on('opentag', function (node) {
-    var tag = node.name.toLowerCase();
-    pushDepth(tag, node.attributes);
-    sibling.push(0);
-
-    if (CLOSING.indexOf(tag) != -1) {
-      sibling.pop();
-      sibling[sibling.length - 1]++;
-      popDepth(tag);
-    }
-  });
-
-  ss.on('closetag', function (tag) {
-    tag = tag.toLowerCase();
-    if (CLOSING.indexOf(tag) != -1) {
-      return;
-    }
-    sibling.pop();
-    sibling[sibling.length - 1]++;
-    popDepth(tag);
-  });
-
   // Forward useful events.
 
   ss.on('end', function () {
@@ -193,6 +63,156 @@ function CssQuery (text, ss) {
 
   ss.on('text', function (text) {
     query.emit('text', text);
+  });
+
+  // Parse querie(s)
+
+  // TODO match flag to not repeat on multiple queries
+
+  text.trim().split(/\s*,\s*/).forEach(function (text) {
+
+    var steps = parseQuery(text);
+    var state = [];
+
+    function isSimpleMatch (tag, attributes, i) {
+      if (steps[i] && steps[i][0] == 'simple') {
+        return steps[i][1].every(function (part) {
+          switch (part[0]) {
+            case '#':
+              return attributes.id && attributes.id.trim() == part.substr(1);
+            case '.':
+              return attributes.class && attributes.class.trim().split(/\s+/).indexOf(part.substr(1)) != -1;
+            case '[':
+              var parts = part.substr(1, part.length - 2).match(/^([a-z\-_0-9A-Z]+)([=~*|^$]+)?(.*)?$/);
+              if (!Object.prototype.hasOwnProperty.call(attributes, parts[1])) {
+                return false;
+              }
+              if (parts[2]) {
+                var against = parts[3].replace(/^['"]|['"]$/g, '');
+                switch (parts[2]) {
+                  case '=':
+                    return against == attributes[parts[1]];
+                  case '^=':
+                    return attributes[parts[1]].startsWith(against);
+                  case '$=':
+                    return attributes[parts[1]].endsWith(against);
+                  case '*=':
+                    return attributes[parts[1]].indexOf(against) != -1;
+                  case '|=':
+                    return against == attributes[parts[1]] || attributes[parts[1]].startsWith(against + '-');
+                  case '~=':
+                    return attributes[parts[1]].trim().split(/\s+/).indexOf(against) != -1;
+                  default:
+                    return false;
+                }
+              }
+              return true;
+            case ':':
+              var parts = part.substr(1).match(/^([a-z\-]+)\((.*)\)$/);
+              switch (parts[1]) {
+                case 'nth-child':
+                  var nthparts = parts[2].match(/^(\d+)(n)?(\+\d+)?$/);
+                  if (nthparts[2]) {
+                    return (last(sibling) + 1) % Number(nthparts[1]) == Number(nthparts[3] || 0);
+                  } else {
+                    return Number(nthparts[1]) == last(sibling) + 1;
+                  }
+              }
+              return false;
+            default:
+              return part == tag || part == '*';
+          }
+        })
+      }
+      return false;
+    }
+
+    function isChildMatch (tag, attributes, i, depth, vd) {
+      return steps[i] && steps[i][0] == 'child' && depth == vd - 1 && isSimpleMatch(tag, attributes, i + 1); 
+    }
+
+    function isAdjacentMatch (tag, attributes, i, depth, vd) {
+      return steps[i] && steps[i][0] == 'adjacent' && depth == vd && isSimpleMatch(tag, attributes, i + 1); 
+    }
+
+    function isSiblingMatch (tag, attributes, i, depth, vd, j, sib) {
+      return steps[i] && steps[i][0] == 'sibling' && depth == vd && j == sib + 1 && isSimpleMatch(tag, attributes, i + 1); 
+    }
+
+    var depth = 0, sibling = [0];
+
+    function pushDepth (tag, attributes) {
+      state.forEach(function (q) {
+        if (isSimpleMatch(tag, attributes, q.length)) {
+          q.push([depth, last(sibling)]);
+        } else if (isChildMatch(tag, attributes, q.length, last(q)[0], depth)) {
+          q.push([depth, last(sibling)]);
+          q.push([depth, last(sibling)]);
+        } else if (isAdjacentMatch(tag, attributes, q.length, last(q)[0], depth)) {
+          q.push([depth, last(sibling)]);
+          q.push([depth, last(sibling)]);
+        } else if (isSiblingMatch(tag, attributes, q.length, last(q)[0], depth, last(sibling), last(q)[1])) {
+          q.push([depth, last(sibling)]);
+          q.push([depth, last(sibling)]);
+        }
+      });
+      if (isSimpleMatch(tag, attributes, 0)) {
+        //console.log('Starting steps with:', node.name);
+        state.push([[depth, last(sibling)]]);
+      }
+      if (state.some(function (q) {
+        return q.length == steps.length && last(q)[0] == depth;
+      })) {
+        query.emit('match', tag, attributes);
+      }
+      depth++;
+
+      // Emit 'opentag' event.
+      query.emit('opentag', tag, attributes);
+    }
+
+    function popDepth (tag) {
+      depth--;
+      state.forEach(function (q) {
+        while (q.length && q[q.length - 1][0] >= depth) {
+          if (steps[q.length] && q[q.length - 1][0] == depth && ['sibling', 'adjacent'].indexOf(steps[q.length][0]) != -1
+            && (steps[q.length][0] != 'sibling' || q[q.length - 1][1] == last(sibling) - 1)) {
+            break;
+          }
+          q.pop();
+        }
+      })
+      state = state.filter(function (q) {
+        return q.length > 0;
+      });
+
+      // Emit 'closetag' event.
+      query.emit('closetag', tag);
+    }
+
+    // parsing
+
+    ss.on('opentag', function (node) {
+      var tag = node.name.toLowerCase();
+      pushDepth(tag, node.attributes);
+      sibling.push(0);
+
+      if (CLOSING.indexOf(tag) != -1) {
+        sibling.pop();
+        sibling[sibling.length - 1]++;
+        popDepth(tag);
+      }
+    });
+
+    ss.on('closetag', function (tag) {
+      tag = tag.toLowerCase();
+      if (CLOSING.indexOf(tag) != -1) {
+        return;
+      }
+      sibling.pop();
+      sibling[sibling.length - 1]++;
+      popDepth(tag);
+    });
   });
 }
 

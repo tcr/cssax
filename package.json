@@ -1,6 +1,6 @@
 {
   "name": "cssax",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "CSS querying of HTML streams.",
   "main": "cssax.js",
   "scripts": {
