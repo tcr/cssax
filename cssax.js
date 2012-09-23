@@ -64,7 +64,7 @@ function CssQuery (text, ss) {
   });
 
   ss.on('text', function (text) {
-    query.emit('text', text);
+    query.emit('text', ent.decode(text));
   });
 
   // Parse querie(s)
@@ -247,7 +247,7 @@ CssQuery.prototype.readText = function (next) {
   this.addListener('text', data);
   this.skip(function () {
     this.removeListener('text', data);
-    next.call(this, ent.decode(str.join('')));
+    next.call(this, str.join(''));
   });
 };
 
