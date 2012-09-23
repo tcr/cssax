@@ -247,7 +247,7 @@ CssQuery.prototype.readText = function (next) {
   this.addListener('text', data);
   this.skip(function () {
     this.removeListener('text', data);
-    next.call(this, str.join(''));
+    next.call(this, ent.decode(str.join('')));
   });
 };
 
