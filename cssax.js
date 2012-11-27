@@ -67,6 +67,10 @@ function CssQuery (text, ss) {
     query.emit('text', ent.decode(text));
   });
 
+  ss.on('script', function (text) {
+    query.emit('text', text);
+  });
+
   // Parse querie(s)
 
   // TODO match flag to not repeat on multiple queries
@@ -192,7 +196,7 @@ function CssQuery (text, ss) {
       query.emit('closetag', tag);
     }
 
-    // parsing
+    // Parse content.
 
     ss.on('opentag', function (node) {
       var tag = node.name.toLowerCase();
