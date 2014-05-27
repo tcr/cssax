@@ -4,7 +4,7 @@ var util = require('util');
 var EventEmitter = require('events').EventEmitter;
 
 var sax = require('sax');
-var ent = require('ent');
+var he = require('he');
 
 String.prototype.startsWith = function (str) {
     return this.slice(0, str.length) == str;
@@ -64,7 +64,7 @@ function CssQuery (text, ss) {
   });
 
   ss.on('text', function (text) {
-    query.emit('text', ent.decode(text));
+    query.emit('text', he.decode(text));
   });
 
   ss.on('script', function (text) {
@@ -134,15 +134,15 @@ function CssQuery (text, ss) {
     }
 
     function isChildMatch (tag, attributes, i, depth, vd) {
-      return steps[i] && steps[i][0] == 'child' && depth == vd - 1 && isSimpleMatch(tag, attributes, i + 1); 
+      return steps[i] && steps[i][0] == 'child' && depth == vd - 1 && isSimpleMatch(tag, attributes, i + 1);
     }
 
     function isAdjacentMatch (tag, attributes, i, depth, vd) {
-      return steps[i] && steps[i][0] == 'adjacent' && depth == vd && isSimpleMatch(tag, attributes, i + 1); 
+      return steps[i] && steps[i][0] == 'adjacent' && depth == vd && isSimpleMatch(tag, attributes, i + 1);
     }
 
     function isSiblingMatch (tag, attributes, i, depth, vd, j, sib) {
-      return steps[i] && steps[i][0] == 'sibling' && depth == vd && j == sib + 1 && isSimpleMatch(tag, attributes, i + 1); 
+      return steps[i] && steps[i][0] == 'sibling' && depth == vd && j == sib + 1 && isSimpleMatch(tag, attributes, i + 1);
     }
 
     var depth = 0, sibling = [0];
@@ -264,7 +264,7 @@ CssQuery.prototype.readHTML = function (next) {
   }
   function opentag (tag, attributes) {
     str.push('<' + tag + Object.keys(attributes).map(function (key) {
-      return ' ' + key + '=' + '"' + ent.encode(attributes[key]) + '"';
+      return ' ' + key + '=' + '"' + he.encode(attributes[key]) + '"';
     }).join('') + '>');
   }
   function closetag (tag) {
