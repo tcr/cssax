@@ -18,8 +18,7 @@
   "author": "Tim Cameron Ryan",
   "license": "MIT",
   "dependencies": {
-    "ent": "0.0.4",
-    "he": "^0.4.1",
+    "he": "~0.4.1",
     "sax": "~0.4.2"
   }
 }
