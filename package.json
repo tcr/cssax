@@ -1,6 +1,6 @@
 {
   "name": "cssax",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Event-based CSS querying of HTML streams.",
   "main": "cssax.js",
   "repository": {
